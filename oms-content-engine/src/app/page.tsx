@@ -1,391 +1,259 @@
 'use client'
-
 import { useState, useEffect } from 'react'
-import styles from './page.module.css'
 
-const CONTENT_TYPES = ['News Article','Industry Analysis','Game Review','Bonus Guide','How-To Guide','Trend Report']
 const CATEGORIES = ['Industry News','Game Reviews','Bonuses & Promotions','Mobile & App Gaming','Responsible Gambling','Interviews & Opinions','Regulatory Updates','New Game Releases']
-const CASINO_TAGS = ['Betway','YesPlay','Easybet','Hollywoodbets','Punt Casino','Yebo Casino','Mzansibet','Lottostar']
-const GAME_TAGS = ['Aviator','Gates of Olympus','Sweet Bonanza','Big Bass Bonanza','Starburst','Book of Dead','Mega Moolah','Wolf Gold','Hot Hot Fruit','Reactoonz','Fire Joker','Divine Fortune']
+const CONTENT_TYPES = ['News Article','Game Review','Bonus Guide','How-To Guide','Top List','Opinion Piece']
 
-type GeneratedArticle = {
-  title: string; summary: string; slug: string; categories: string[]
-  content: object; contentMarkdown: string; imageUrl: string; imagePrompt: string
-  authorId: string; authorName: string; tags: string[]
-}
-type Step = 'input' | 'generating' | 'review' | 'publishing' | 'done'
-type ActiveTab = 'generate' | 'settings' | 'ideas'
-
-export default function Home() {
-  const [password, setPassword] = useState('')
-  const [authed, setAuthed] = useState(false)
-  const [authError, setAuthError] = useState(false)
-  const [activeTab, setActiveTab] = useState<ActiveTab>('generate')
-
-  // Generate state
+export default function AdminPage() {
+  const [auth, setAuth] = useState(false)
+  const [pw, setPw] = useState('')
+  const [tab, setTab] = useState('generate')
   const [keyword, setKeyword] = useState('')
   const [contentType, setContentType] = useState('News Article')
-  const [additionalContext, setAdditionalContext] = useState('')
-  const [step, setStep] = useState<Step>('input')
-  const [article, setArticle] = useState<GeneratedArticle | null>(null)
-  const [editedTitle, setEditedTitle] = useState('')
-  const [editedSummary, setEditedSummary] = useState('')
-  const [editedSlug, setEditedSlug] = useState('')
-  const [editedCategories, setEditedCategories] = useState<string[]>([])
-  const [editedMarkdown, setEditedMarkdown] = useState('')
-  const [editedTags, setEditedTags] = useState<string[]>([])
+  const [loading, setLoading] = useState(false)
+  const [result, setResult] = useState(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editSummary, setEditSummary] = useState('')
+  const [editSlug, setEditSlug] = useState('')
+  const [editContent, setEditContent] = useState('')
+  const [editCategories, setEditCategories] = useState([])
+  const [publishing, setPublishing] = useState(false)
+  const [published, setPublished] = useState(false)
   const [error, setError] = useState('')
-  const [publishedUrl, setPublishedUrl] = useState('')
-  const [log, setLog] = useState<string[]>([])
-
-  // Settings state - stored in memory (resets on refresh, edit cron route to persist)
-  const [keywords, setKeywords] = useState<string[]>([])
-  const [newKeyword, setNewKeyword] = useState('')
-  const [ideas, setIdeas] = useState<string[]>([])
-  const [newIdea, setNewIdea] = useState('')
+  const [ideas, setIdeas] = useState([])
+  const [ideaInput, setIdeaInput] = useState('')
   const [ideaIndex, setIdeaIndex] = useState(0)
+  const [keywords, setKeywords] = useState([])
+  const [kwInput, setKwInput] = useState('')
 
-  // Load settings from localStorage on mount
   useEffect(() => {
     try {
-      const savedKeywords = localStorage.getItem('oms_keywords')
-      const savedIdeas = localStorage.getItem('oms_ideas')
-      const savedIdeaIndex = localStorage.getItem('oms_idea_index')
-      if (savedKeywords) setKeywords(JSON.parse(savedKeywords))
-      if (savedIdeas) setIdeas(JSON.parse(savedIdeas))
-      if (savedIdeaIndex) setIdeaIndex(parseInt(savedIdeaIndex))
-    } catch {}
+      const si = localStorage.getItem('oms_ideas'); if (si) setIdeas(JSON.parse(si))
+      const sx = localStorage.getItem('oms_idea_index'); if (sx) setIdeaIndex(parseInt(sx))
+      const sk = localStorage.getItem('oms_keywords'); if (sk) setKeywords(JSON.parse(sk))
+      const sa = localStorage.getItem('oms_auth'); if (sa === '1') setAuth(true)
+    } catch(e) {}
   }, [])
 
-  const saveKeywords = (kws: string[]) => {
-    setKeywords(kws)
-    localStorage.setItem('oms_keywords', JSON.stringify(kws))
+  function login() {
+    if (pw === 'omsadmin2025') { setAuth(true); localStorage.setItem('oms_auth','1') }
+    else setError('Wrong password')
   }
 
-  const saveIdeas = (ids: string[]) => {
-    setIdeas(ids)
-    localStorage.setItem('oms_ideas', JSON.stringify(ids))
+  function addIdea() {
+    if (!ideaInput.trim()) return
+    const u = [...ideas, ideaInput.trim()]; setIdeas(u)
+    localStorage.setItem('oms_ideas', JSON.stringify(u)); setIdeaInput('')
   }
 
-  const saveIdeaIndex = (idx: number) => {
-    setIdeaIndex(idx)
-    localStorage.setItem('oms_idea_index', String(idx))
+  function removeIdea(i) {
+    const u = ideas.filter((_,idx) => idx !== i); setIdeas(u)
+    localStorage.setItem('oms_ideas', JSON.stringify(u))
   }
 
-  const addLog = (msg: string) => setLog(prev => [...prev, '[' + new Date().toLocaleTimeString() + '] ' + msg])
-
-  const handleAuth = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (password.length > 3) { setAuthed(true); setAuthError(false) }
-    else setAuthError(true)
+  function useNextIdea() {
+    if (ideas.length === 0) return
+    setKeyword(ideas[ideaIndex % ideas.length])
+    const n = (ideaIndex + 1) % ideas.length; setIdeaIndex(n)
+    localStorage.setItem('oms_idea_index', String(n)); setTab('generate')
   }
 
-  const handleGenerate = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!keyword.trim()) return
-    setStep('generating'); setError(''); setLog([])
-    addLog('Starting: "' + keyword + '"')
-    addLog('Searching web...')
+  function addKeyword() {
+    if (!kwInput.trim()) return
+    const u = [...keywords, kwInput.trim()]; setKeywords(u)
+    localStorage.setItem('oms_keywords', JSON.stringify(u)); setKwInput('')
+  }
 
-    const keywordsCtx = keywords.length > 0 ? 'Include these keywords naturally: ' + keywords.join(', ') : ''
+  function removeKeyword(i) {
+    const u = keywords.filter((_,idx) => idx !== i); setKeywords(u)
+    localStorage.setItem('oms_keywords', JSON.stringify(u))
+  }
 
+  async function generate() {
+    setLoading(true); setError(''); setResult(null); setPublished(false)
     try {
       const res = await fetch('/api/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
-        body: JSON.stringify({ keyword, contentType, additionalContext: additionalContext + (keywordsCtx ? '\n' + keywordsCtx : '') }),
+        headers: {'Content-Type':'application/json','x-admin-password':'omsadmin2025'},
+        body: JSON.stringify({keyword, contentType, globalKeywords: keywords}),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Generation failed')
-      addLog('Generated: ' + data.title)
-      addLog('Author: ' + data.authorName)
-      addLog('Tags: ' + (data.tags || []).join(', '))
-      addLog('Image: ' + (data.imageUrl ? 'Generated ✓' : 'Skipped'))
-      setArticle(data)
-      setEditedTitle(data.title); setEditedSummary(data.summary)
-      setEditedSlug(data.slug); setEditedCategories(data.categories || [])
-      setEditedMarkdown(data.contentMarkdown); setEditedTags(data.tags || [])
-      setStep('review')
-    } catch (err) {
-      setError(String(err)); addLog('ERROR: ' + String(err)); setStep('input')
-    }
+      if (data.error) { setError(data.error); return }
+      setResult(data); setEditTitle(data.title); setEditSummary(data.summary)
+      setEditSlug(data.slug); setEditContent(data.contentMarkdown); setEditCategories(data.categories || [])
+    } catch(e) { setError(String(e)) } finally { setLoading(false) }
   }
 
-  const handlePublish = async () => {
-    if (!article) return
-    setStep('publishing'); addLog('Publishing...')
+  async function publish() {
+    if (!result) return; setPublishing(true)
     try {
-      const { textToTiptap } = await import('@/lib/tiptap')
-      const freshContent = textToTiptap(editedMarkdown)
       const res = await fetch('/api/publish', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
+        headers: {'Content-Type':'application/json','x-admin-password':'omsadmin2025'},
         body: JSON.stringify({
-          title: editedTitle, slug: editedSlug, summary: editedSummary,
-          categories: editedCategories, content: freshContent,
-          image: article.imageUrl || '', authorId: article.authorId,
-          tags: editedTags,
+          title: editTitle, slug: editSlug, summary: editSummary,
+          categories: editCategories, content: result.content,
+          image: result.imageUrl || '', authorId: result.authorId || null, tags: result.tags || [],
         }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Publish failed')
-      addLog('Published! Live at: /news/' + data.slug)
-      setPublishedUrl('https://onlinemobileslots.com/news/' + data.slug)
-      setStep('done')
-    } catch (err) {
-      setError(String(err)); addLog('ERROR: ' + String(err)); setStep('review')
-    }
+      if (data.error) { setError(data.error); return }
+      setPublished(true)
+    } catch(e) { setError(String(e)) } finally { setPublishing(false) }
   }
 
-  const handleReset = () => {
-    setStep('input'); setArticle(null); setKeyword('')
-    setAdditionalContext(''); setError(''); setLog([]); setPublishedUrl('')
-  }
+  const bg = '#0a0a0a', card = '#111', border = '#1e1e1e', green = '#22c55e', text = '#e5e5e5', dim = '#666'
 
-  const toggleCategory = (cat: string) =>
-    setEditedCategories(prev => prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat])
-
-  const toggleTag = (tag: string) =>
-    setEditedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])
-
-  if (!authed) {
-    return (
-      <div className={styles.authWrap}>
-        <div className={styles.authBox}>
-          <div className={styles.logo}>OMS<span>///</span>ENGINE</div>
-          <p className={styles.authSub}>Content Generation System</p>
-          <form onSubmit={handleAuth} className={styles.authForm}>
-            <input type="password" placeholder="Admin password" value={password}
-              onChange={e => setPassword(e.target.value)} className={styles.input} autoFocus />
-            {authError && <p className={styles.errorMsg}>Invalid password</p>}
-            <button type="submit" className={styles.btnPrimary}>AUTHENTICATE →</button>
-          </form>
-        </div>
+  if (!auth) return (
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',minHeight:'100vh',background:bg}}>
+      <div style={{background:card,border:'1px solid #222',borderRadius:8,padding:40,width:340}}>
+        <div style={{fontSize:18,fontWeight:700,color:'#fff',marginBottom:24,letterSpacing:'0.05em'}}>OMS CONTENT ENGINE</div>
+        <input value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==='Enter'&&login()} type="password" placeholder="Password" style={{width:'100%',background:'#1a1a1a',border:'1px solid #333',color:'#fff',padding:'10px 14px',borderRadius:6,fontSize:14,boxSizing:'border-box',marginBottom:12}} />
+        <button onClick={login} style={{width:'100%',background:green,color:'#fff',border:'none',borderRadius:6,padding:10,fontSize:14,fontWeight:600,cursor:'pointer'}}>Login</button>
+        {error && <div style={{color:'#ef4444',marginTop:8,fontSize:13}}>{error}</div>}
       </div>
-    )
-  }
+    </div>
+  )
+
+  const inp = {width:'100%',background:card,border:'1px solid #333',color:text,padding:'10px 14px',borderRadius:6,fontSize:14,boxSizing:'border-box'}
+  const btn = {background:green,color:'#fff',border:'none',borderRadius:6,padding:'10px 20px',fontSize:13,fontWeight:600,cursor:'pointer'}
+  const cardS = {background:card,border:'1px solid '+border,borderRadius:8,padding:20,marginBottom:16}
+  const tag = {background:'#1a1a1a',border:'1px solid #2a2a2a',borderRadius:4,padding:'3px 10px',fontSize:11,color:'#888',display:'inline-flex',alignItems:'center',gap:6}
+  const tabBtn = (active) => ({background:active?green:'transparent',border:'1px solid '+(active?green:'#333'),color:active?'#fff':'#888',padding:'6px 16px',fontSize:11,letterSpacing:'0.08em',borderRadius:4,cursor:'pointer'})
 
   return (
-    <div className={styles.wrap}>
-      <header className={styles.header}>
-        <div className={styles.headerLeft}>
-          <span className={styles.logo}>OMS<span>///</span>ENGINE</span>
-          <span className={styles.headerSub}>onlinemobileslots.com</span>
+    <div style={{minHeight:'100vh',background:bg,color:text,fontFamily:'system-ui,sans-serif'}}>
+      <div style={{background:card,borderBottom:'1px solid #222',padding:'12px 24px',display:'flex',alignItems:'center',gap:16}}>
+        <span style={{fontSize:14,fontWeight:700,letterSpacing:'0.1em',color:green}}>OMS CONTENT ENGINE</span>
+        <div style={{display:'flex',gap:4,marginLeft:'auto'}}>
+          {['generate','ideas','settings'].map(t=>(
+            <button key={t} onClick={()=>setTab(t)} style={tabBtn(tab===t)}>{t.toUpperCase()}</button>
+          ))}
         </div>
-        <div className={styles.headerTabs}>
-          <button className={styles.tabBtn + (activeTab === 'generate' ? ' ' + styles.tabActive : '')} onClick={() => setActiveTab('generate')}>GENERATE</button>
-          <button className={styles.tabBtn + (activeTab === 'ideas' ? ' ' + styles.tabActive : '')} onClick={() => setActiveTab('ideas')}>IDEAS ({ideas.length})</button>
-          <button className={styles.tabBtn + (activeTab === 'settings' ? ' ' + styles.tabActive : '')} onClick={() => setActiveTab('settings')}>SETTINGS</button>
-        </div>
-        <div className={styles.headerRight}>
-          <span className={styles.statusDot} data-active={step !== 'input'} />
-          <span className={styles.statusText}>
-            {step === 'input' && 'READY'}{step === 'generating' && 'GENERATING...'}
-            {step === 'review' && 'AWAITING REVIEW'}{step === 'publishing' && 'PUBLISHING...'}{step === 'done' && 'PUBLISHED'}
-          </span>
-        </div>
-      </header>
+      </div>
 
-      <main className={styles.main}>
-        <div className={styles.leftPanel}>
+      <div style={{maxWidth:900,margin:'0 auto',padding:'32px 24px'}}>
 
-          {/* ── SETTINGS TAB ── */}
-          {activeTab === 'settings' && (
-            <section className={styles.card}>
-              <h2 className={styles.cardTitle}>// GLOBAL KEYWORDS</h2>
-              <p className={styles.hint}>↳ These keywords will be woven into every article naturally</p>
-              <div className={styles.tagGrid} style={{marginTop:'8px'}}>
-                {keywords.map(k => (
-                  <button key={k} className={styles.catBtn} data-active="true"
-                    onClick={() => saveKeywords(keywords.filter(x => x !== k))}>
-                    {k} ×
-                  </button>
-                ))}
+        {tab==='generate' && <div>
+          <div style={cardS}>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:16}}>
+              <div>
+                <label style={{fontSize:11,letterSpacing:'0.1em',color:dim,display:'block',marginBottom:6,textTransform:'uppercase'}}>Keyword / Topic</label>
+                <input style={inp} value={keyword} onChange={e=>setKeyword(e.target.value)} placeholder="e.g. Best slots South Africa 2025" onKeyDown={e=>e.key==='Enter'&&generate()} />
               </div>
-              <div style={{display:'flex',gap:'8px',marginTop:'12px'}}>
-                <input className={styles.input} value={newKeyword} onChange={e => setNewKeyword(e.target.value)}
-                  placeholder="Add keyword (e.g. online slots South Africa)"
-                  onKeyDown={e => { if (e.key === 'Enter' && newKeyword.trim()) { saveKeywords([...keywords, newKeyword.trim()]); setNewKeyword('') }}} />
-                <button className={styles.btnSecondary} style={{flex:'0 0 auto',width:'80px'}}
-                  onClick={() => { if (newKeyword.trim()) { saveKeywords([...keywords, newKeyword.trim()]); setNewKeyword('') }}}>ADD</button>
+              <div>
+                <label style={{fontSize:11,letterSpacing:'0.1em',color:dim,display:'block',marginBottom:6,textTransform:'uppercase'}}>Content Type</label>
+                <select style={{...inp,background:card}} value={contentType} onChange={e=>setContentType(e.target.value)}>
+                  {CONTENT_TYPES.map(t=><option key={t}>{t}</option>)}
+                </select>
               </div>
-            </section>
-          )}
-
-          {/* ── IDEAS TAB ── */}
-          {activeTab === 'ideas' && (
-            <section className={styles.card}>
-              <h2 className={styles.cardTitle}>// ARTICLE IDEAS</h2>
-              <p className={styles.hint}>↳ Add topics/games. Daily cron cycles through these in order.</p>
-              <p className={styles.hint} style={{color:'var(--accent)'}}>↳ Next up: {ideas.length > 0 ? ideas[ideaIndex % ideas.length] : 'No ideas yet'} (#{(ideaIndex % (ideas.length || 1)) + 1})</p>
-
-              <div style={{display:'flex',flexDirection:'column',gap:'6px',marginTop:'12px'}}>
-                {ideas.map((idea, i) => (
-                  <div key={i} style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px',background: i === ideaIndex % (ideas.length||1) ? 'var(--bg-2)' : 'transparent',border:'1px solid ' + (i === ideaIndex % (ideas.length||1) ? 'var(--accent)' : 'var(--border)')}}>
-                    <span style={{color:'var(--accent)',fontSize:'10px',width:'20px'}}>{i+1}</span>
-                    <span style={{flex:1,fontSize:'12px'}}>{idea}</span>
-                    <button style={{background:'none',border:'none',color:'var(--text-dimmer)',cursor:'pointer'}}
-                      onClick={() => { const next = ideas.filter((_,j) => j !== i); saveIdeas(next); if (ideaIndex >= next.length) saveIdeaIndex(0) }}>×</button>
-                  </div>
-                ))}
-              </div>
-
-              <div style={{display:'flex',gap:'8px',marginTop:'12px'}}>
-                <input className={styles.input} value={newIdea} onChange={e => setNewIdea(e.target.value)}
-                  placeholder="Add idea (e.g. Aviator, Big Bass Bonanza tips)"
-                  onKeyDown={e => { if (e.key === 'Enter' && newIdea.trim()) { saveIdeas([...ideas, newIdea.trim()]); setNewIdea('') }}} />
-                <button className={styles.btnSecondary} style={{flex:'0 0 auto',width:'80px'}}
-                  onClick={() => { if (newIdea.trim()) { saveIdeas([...ideas, newIdea.trim()]); setNewIdea('') }}}>ADD</button>
-              </div>
-
-              {ideas.length > 0 && (
-                <div style={{marginTop:'16px',paddingTop:'16px',borderTop:'1px solid var(--border)'}}>
-                  <p className={styles.hint}>Generate from next idea:</p>
-                  <button className={styles.btnPrimary} style={{marginTop:'8px'}} onClick={() => {
-                    const idea = ideas[ideaIndex % ideas.length]
-                    setKeyword(idea)
-                    saveIdeaIndex((ideaIndex + 1) % ideas.length)
-                    setActiveTab('generate')
-                  }}>USE NEXT IDEA: {ideas[ideaIndex % ideas.length]} →</button>
-                </div>
-              )}
-            </section>
-          )}
-
-          {/* ── GENERATE TAB ── */}
-          {activeTab === 'generate' && (
-            <>
-              {(step === 'input' || step === 'generating') && (
-                <section className={styles.card}>
-                  <h2 className={styles.cardTitle}>// GENERATE ARTICLE</h2>
-                  <form onSubmit={handleGenerate} className={styles.form}>
-                    <label className={styles.label}>KEYWORD / TOPIC</label>
-                    <input className={styles.input} value={keyword} onChange={e => setKeyword(e.target.value)}
-                      placeholder="e.g. Aviator game tips South Africa 2025" disabled={step === 'generating'} required />
-                    <label className={styles.label}>CONTENT TYPE</label>
-                    <select className={styles.select} value={contentType} onChange={e => setContentType(e.target.value)} disabled={step === 'generating'}>
-                      {CONTENT_TYPES.map(t => <option key={t}>{t}</option>)}
-                    </select>
-                    <label className={styles.label}>ADDITIONAL CONTEXT <span className={styles.optional}>(optional)</span></label>
-                    <textarea className={styles.textarea} value={additionalContext} onChange={e => setAdditionalContext(e.target.value)}
-                      placeholder="Specific angles, operators to mention..." rows={3} disabled={step === 'generating'} />
-                    {keywords.length > 0 && <p className={styles.hint}>↳ {keywords.length} global keywords will be included</p>}
-                    {error && <p className={styles.errorMsg}>{error}</p>}
-                    <button type="submit" className={styles.btnPrimary} disabled={step === 'generating' || !keyword.trim()}>
-                      {step === 'generating' ? 'GENERATING...' : 'GENERATE →'}
-                    </button>
-                  </form>
-                </section>
-              )}
-
-              {(step === 'review' || step === 'publishing') && article && (
-                <section className={styles.card}>
-                  <h2 className={styles.cardTitle}>// REVIEW & EDIT</h2>
-
-                  {article.imageUrl && (
-                    <div style={{marginBottom:'12px'}}>
-                      <label className={styles.label}>GENERATED IMAGE</label>
-                      <img src={article.imageUrl} alt="Generated" style={{width:'100%',height:'160px',objectFit:'cover',border:'1px solid var(--border)',marginTop:'6px'}} />
-                    </div>
-                  )}
-
-                  <label className={styles.label}>AUTHOR</label>
-                  <p style={{fontSize:'12px',color:'var(--text-dim)',padding:'8px',background:'var(--bg-2)',border:'1px solid var(--border)'}}>{article.authorName}</p>
-
-                  <label className={styles.label}>TITLE</label>
-                  <input className={styles.input} value={editedTitle} onChange={e => setEditedTitle(e.target.value)} />
-
-                  <label className={styles.label}>SLUG</label>
-                  <input className={styles.input} value={editedSlug} onChange={e => setEditedSlug(e.target.value)} />
-                  <p className={styles.hint}>↳ onlinemobileslots.com/news/{editedSlug}</p>
-
-                  <label className={styles.label}>SUMMARY</label>
-                  <textarea className={styles.textarea} value={editedSummary} onChange={e => setEditedSummary(e.target.value)} rows={2} />
-
-                  <label className={styles.label}>CATEGORIES</label>
-                  <div className={styles.catGrid}>
-                    {CATEGORIES.map(cat => (
-                      <button key={cat} type="button" className={styles.catBtn}
-                        data-active={editedCategories.includes(cat)} onClick={() => toggleCategory(cat)}>{cat}</button>
-                    ))}
-                  </div>
-
-                  <label className={styles.label}>CASINO TAGS</label>
-                  <div className={styles.catGrid}>
-                    {CASINO_TAGS.map(tag => (
-                      <button key={tag} type="button" className={styles.catBtn}
-                        data-active={editedTags.includes(tag)} onClick={() => toggleTag(tag)}>{tag}</button>
-                    ))}
-                  </div>
-
-                  <label className={styles.label}>GAME TAGS</label>
-                  <div className={styles.catGrid}>
-                    {GAME_TAGS.map(tag => (
-                      <button key={tag} type="button" className={styles.catBtn}
-                        data-active={editedTags.includes(tag)} onClick={() => toggleTag(tag)}>{tag}</button>
-                    ))}
-                  </div>
-
-                  <label className={styles.label}>CONTENT (MARKDOWN)</label>
-                  <textarea className={styles.contentEditor} value={editedMarkdown} onChange={e => setEditedMarkdown(e.target.value)} rows={25} spellCheck />
-
-                  {error && <p className={styles.errorMsg}>{error}</p>}
-                  <div className={styles.btnRow}>
-                    <button className={styles.btnSecondary} onClick={handleReset}>← START OVER</button>
-                    <button className={styles.btnPrimary} onClick={handlePublish} disabled={step === 'publishing'}>
-                      {step === 'publishing' ? 'PUBLISHING...' : 'PUBLISH LIVE →'}
-                    </button>
-                  </div>
-                </section>
-              )}
-
-              {step === 'done' && (
-                <section className={styles.card}>
-                  <div className={styles.doneBox}>
-                    <div className={styles.doneIcon}>✓</div>
-                    <h2 className={styles.doneTitle}>PUBLISHED</h2>
-                    <a href={publishedUrl} target="_blank" rel="noopener noreferrer" className={styles.doneLink}>{publishedUrl}</a>
-                    <button className={styles.btnPrimary} onClick={handleReset}>GENERATE ANOTHER →</button>
-                  </div>
-                </section>
-              )}
-            </>
-          )}
-        </div>
-
-        {/* Right panel */}
-        <div className={styles.rightPanel}>
-          <section className={styles.logCard}>
-            <h2 className={styles.cardTitle}>// ACTIVITY LOG</h2>
-            <div className={styles.log}>
-              {log.length === 0 && <p className={styles.logEmpty}>Waiting...</p>}
-              {log.map((line, i) => <div key={i} className={styles.logLine}>{line}</div>)}
             </div>
-          </section>
+            {keywords.length>0 && <div style={{marginBottom:12}}>
+              <div style={{fontSize:11,color:dim,marginBottom:6,textTransform:'uppercase',letterSpacing:'0.1em'}}>Global Keywords Active</div>
+              <div style={{display:'flex',flexWrap:'wrap',gap:6}}>{keywords.map((k,i)=><span key={i} style={tag}>{k}</span>)}</div>
+            </div>}
+            {ideas.length>0 && <div style={{marginBottom:12}}>
+              <button onClick={useNextIdea} style={{...btn,background:'transparent',border:'1px solid '+green,color:green,fontSize:11}}>
+                USE NEXT IDEA ({ideas[ideaIndex%ideas.length]})
+              </button>
+            </div>}
+            <button onClick={generate} disabled={loading||!keyword} style={{...btn,opacity:loading||!keyword?0.5:1}}>
+              {loading?'GENERATING...':'GENERATE ARTICLE'}
+            </button>
+            {error && <div style={{color:'#ef4444',marginTop:12,fontSize:13}}>{error}</div>}
+          </div>
 
-          {article && step !== 'input' && (
-            <section className={styles.previewCard}>
-Add Settings + Ideas tabs, author/tags display, image preview              <div className={styles.preview}>
-                {article.imageUrl && <img src={article.imageUrl} alt="" style={{width:'100%',height:'140px',objectFit:'cover',marginBottom:'12px'}} />}
-                <h1 className={styles.previewTitle}>{editedTitle}</h1>
-                <p className={styles.previewMeta}>{editedCategories.join(' · ')}</p>
-                <p className={styles.previewMeta} style={{color:'var(--text-dimmer)'}}>{article.authorName}</p>
-                <p className={styles.previewSummary}>{editedSummary}</p>
-                <hr className={styles.previewDivider} />
-                <div className={styles.previewContent}>
-                  {editedMarkdown.split('\n').map((line, i) => {
-                    if (line.startsWith('## ')) return <h2 key={i} className={styles.previewH2}>{line.slice(3)}</h2>
-                    if (line.startsWith('### ')) return <h3 key={i} className={styles.previewH3}>{line.slice(4)}</h3>
-                    if (line.startsWith('- ') || line.startsWith('* ')) return <li key={i} className={styles.previewLi}>{line.slice(2)}</li>
-                    if (line.trim() === '') return <br key={i} />
-                    return <p key={i} className={styles.previewP}>{line.replace(/\*\*(.*?)\*\*/g, '$1').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')}</p>
-                  })}
+          {result && <div>
+            {result.imageUrl && <div style={{...cardS,padding:0,overflow:'hidden'}}>
+              <img src={result.imageUrl} alt="Generated" style={{width:'100%',display:'block',maxHeight:300,objectFit:'cover'}} />
+              <div style={{padding:'8px 12px',fontSize:11,color:'#555'}}>AI generated — will appear as article banner on site</div>
+            </div>}
+
+            <div style={cardS}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+                <div style={{fontSize:13,fontWeight:600,color:'#aaa',letterSpacing:'0.08em',textTransform:'uppercase'}}>Review & Edit</div>
+                {result.authorName && <div style={{fontSize:12,color:dim}}>By <span style={{color:green}}>{result.authorName}</span> · {result.authorRole}</div>}
+              </div>
+              <div style={{marginBottom:12}}>
+                <label style={{fontSize:11,color:dim,display:'block',marginBottom:4,textTransform:'uppercase',letterSpacing:'0.1em'}}>Title</label>
+                <input style={inp} value={editTitle} onChange={e=>setEditTitle(e.target.value)} />
+              </div>
+              <div style={{marginBottom:12}}>
+                <label style={{fontSize:11,color:dim,display:'block',marginBottom:4,textTransform:'uppercase',letterSpacing:'0.1em'}}>Slug</label>
+                <input style={inp} value={editSlug} onChange={e=>setEditSlug(e.target.value)} />
+              </div>
+              <div style={{marginBottom:12}}>
+                <label style={{fontSize:11,color:dim,display:'block',marginBottom:4,textTransform:'uppercase',letterSpacing:'0.1em'}}>Summary</label>
+                <input style={inp} value={editSummary} onChange={e=>setEditSummary(e.target.value)} />
+              </div>
+              <div style={{marginBottom:12}}>
+                <label style={{fontSize:11,color:dim,display:'block',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.1em'}}>Categories</label>
+                <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+                  {CATEGORIES.map(c=>(
+                    <label key={c} style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer',fontSize:12,color:editCategories.includes(c)?green:dim}}>
+                      <input type="checkbox" checked={editCategories.includes(c)} onChange={e=>setEditCategories(e.target.checked?[...editCategories,c]:editCategories.filter(x=>x!==c))} style={{accentColor:green}} />
+                      {c}
+                    </label>
+                  ))}
                 </div>
               </div>
-            </section>
-          )}
-        </div>
-      </main>
+              {result.tags && result.tags.length>0 && <div style={{marginBottom:12}}>
+                <label style={{fontSize:11,color:dim,display:'block',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.1em'}}>Auto-Tags (from article content)</label>
+                <div style={{display:'flex',flexWrap:'wrap',gap:6}}>{result.tags.map((t,i)=><span key={i} style={tag}>{t}</span>)}</div>
+              </div>}
+              <div style={{marginBottom:16}}>
+                <label style={{fontSize:11,color:dim,display:'block',marginBottom:4,textTransform:'uppercase',letterSpacing:'0.1em'}}>Content (Markdown)</label>
+                <textarea style={{...inp,height:280,resize:'vertical',fontFamily:'monospace',fontSize:12}} value={editContent} onChange={e=>setEditContent(e.target.value)} />
+              </div>
+              {published
+                ? <div style={{color:green,fontWeight:600}}>✓ Published live at onlinemobileslots.com/news/{editSlug}</div>
+                : <button onClick={publish} disabled={publishing} style={{...btn,background:'#2563eb',opacity:publishing?0.5:1}}>
+                    {publishing?'PUBLISHING...':'PUBLISH LIVE'}
+                  </button>}
+            </div>
+          </div>}
+        </div>}
+
+        {tab==='ideas' && <div style={cardS}>
+          <div style={{fontSize:13,fontWeight:600,color:'#aaa',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:8}}>Article Ideas Queue</div>
+          <p style={{fontSize:13,color:dim,marginBottom:16}}>Add topics — the daily cron cycles through them in order, generating a fresh creative article for each.</p>
+          <div style={{display:'flex',gap:8,marginBottom:20}}>
+            <input style={{...inp,flex:1}} value={ideaInput} onChange={e=>setIdeaInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addIdea()} placeholder="e.g. Aviator, Sweet Bonanza, Easybet bonuses..." />
+            <button onClick={addIdea} style={btn}>ADD</button>
+          </div>
+          {ideas.length===0 ? <div style={{color:'#444',textAlign:'center',padding:32}}>No ideas yet.</div> : ideas.map((idea,i)=>(
+            <div key={i} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px',background:i===ideaIndex%ideas.length?'#0d2218':'#0d0d0d',border:'1px solid '+(i===ideaIndex%ideas.length?'#22c55e22':'#1a1a1a'),borderRadius:6,marginBottom:6}}>
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                <span style={{fontSize:11,color:'#444',minWidth:24}}>#{i+1}</span>
+                <span style={{fontSize:13,color:i===ideaIndex%ideas.length?green:'#ccc'}}>{idea}</span>
+                {i===ideaIndex%ideas.length && <span style={{fontSize:10,color:green,background:'#0a3322',padding:'2px 6px',borderRadius:3}}>NEXT</span>}
+              </div>
+              <div style={{display:'flex',gap:8}}>
+                <button onClick={()=>{setKeyword(idea);setTab('generate')}} style={{background:'#1a1a1a',border:'1px solid #333',color:'#888',borderRadius:4,padding:'4px 10px',fontSize:11,cursor:'pointer'}}>USE NOW</button>
+                <button onClick={()=>removeIdea(i)} style={{background:'transparent',border:'1px solid #ef4444',color:'#ef4444',borderRadius:4,padding:'4px 10px',fontSize:11,cursor:'pointer'}}>✕</button>
+              </div>
+            </div>
+          ))}
+        </div>}
+Rewrite page.tsx - clean, all features, no bloat        {tab==='settings' && <div style={cardS}>
+          <div style={{fontSize:13,fontWeight:600,color:'#aaa',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:8}}>Global Keywords</div>
+          <p style={{fontSize:13,color:dim,marginBottom:16}}>These are injected into every article prompt so Claude weaves them naturally throughout all content.</p>
+          <div style={{display:'flex',gap:8,marginBottom:20}}>
+            <input style={{...inp,flex:1}} value={kwInput} onChange={e=>setKwInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addKeyword()} placeholder="e.g. online casino South Africa, best slots..." />
+            <button onClick={addKeyword} style={btn}>ADD</button>
+          </div>
+          {keywords.length===0 ? <div style={{color:'#444',textAlign:'center',padding:32}}>No global keywords yet.</div> :
+            <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+              {keywords.map((k,i)=>(
+                <div key={i} style={{...tag,padding:'6px 12px'}}>
+                  <span>{k}</span>
+                  <button onClick={()=>removeKeyword(i)} style={{background:'none',border:'none',color:'#ef4444',cursor:'pointer',padding:0,fontSize:12}}>✕</button>
+                </div>
+              ))}
+            </div>}
+        </div>}
+
+      </div>
     </div>
   )
 }
