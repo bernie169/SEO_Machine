@@ -39,37 +39,37 @@ const DAILY_TOPICS = [
 ]
 
 const CASINO_LINKS = [
-  { name: 'Betway Casino', url: '/casinos/betway-casino', tags: ['betway'] },
-  { name: 'YesPlay Casino', url: '/casinos/yesplay-casino', tags: ['yesplay'] },
-  { name: 'Easybet Casino', url: '/casinos/easybet-casino', tags: ['easybet'] },
-  { name: 'Hollywoodbets Casino', url: '/casinos/hollywood-bets-casino', tags: ['hollywoodbets'] },
-  { name: 'Punt Casino', url: '/casinos/punt-casino', tags: ['punt-casino'] },
-  { name: 'Yebo Casino', url: '/casinos/yebo-casino', tags: ['yebo-casino'] },
+  { name: 'Betway Casino', url: '/casinos/betway-casino', tag: 'betway' },
+  { name: 'YesPlay Casino', url: '/casinos/yesplay-casino', tag: 'yesplay' },
+  { name: 'Easybet Casino', url: '/casinos/easybet-casino', tag: 'easybet' },
+  { name: 'Hollywoodbets Casino', url: '/casinos/hollywood-bets-casino', tag: 'hollywoodbets' },
+  { name: 'Punt Casino', url: '/casinos/punt-casino', tag: 'punt-casino' },
+  { name: 'Yebo Casino', url: '/casinos/yebo-casino', tag: 'yebo-casino' },
 ]
 
 const SLOT_LINKS = [
-  { name: 'Aviator', url: '/slots/aviator', tags: ['aviator'] },
-  { name: 'Gates of Olympus', url: '/slots/gates-of-olympus-1000', tags: ['gates-of-olympus'] },
-  { name: 'Sweet Bonanza', url: '/slots/sweet-bonanza', tags: ['sweet-bonanza'] },
-  { name: 'Big Bass Bonanza', url: '/slots/big-bass-bonanza', tags: ['big-bass-bonanza'] },
-  { name: 'Book of Dead', url: '/slots/book-of-dead', tags: ['book-of-dead'] },
-  { name: 'Mega Moolah', url: '/slots/mega-moolah', tags: ['mega-moolah'] },
-  { name: 'Wolf Gold', url: '/slots/wolf-gold', tags: ['wolf-gold'] },
-  { name: 'Hot Hot Fruit', url: '/slots/hot-hot-fruit', tags: ['hot-hot-fruit'] },
-  { name: 'Starburst', url: '/slots/starburst', tags: ['starburst'] },
-  { name: 'Fire Joker', url: '/slots/fire-joker', tags: ['fire-joker'] },
+  { name: 'Aviator', url: '/slots/aviator', tag: 'aviator' },
+  { name: 'Gates of Olympus', url: '/slots/gates-of-olympus-1000', tag: 'gates-of-olympus' },
+  { name: 'Sweet Bonanza', url: '/slots/sweet-bonanza', tag: 'sweet-bonanza' },
+  { name: 'Big Bass Bonanza', url: '/slots/big-bass-bonanza', tag: 'big-bass-bonanza' },
+  { name: 'Book of Dead', url: '/slots/book-of-dead', tag: 'book-of-dead' },
+  { name: 'Mega Moolah', url: '/slots/mega-moolah', tag: 'mega-moolah' },
+  { name: 'Wolf Gold', url: '/slots/wolf-gold', tag: 'wolf-gold' },
+  { name: 'Hot Hot Fruit', url: '/slots/hot-hot-fruit', tag: 'hot-hot-fruit' },
+  { name: 'Starburst', url: '/slots/starburst', tag: 'starburst' },
+  { name: 'Fire Joker', url: '/slots/fire-joker', tag: 'fire-joker' },
 ]
 
 function inferTags(text: string): string[] {
   const lower = text.toLowerCase()
-  const tags: string[] = []
+  const tagSet: Record<string, boolean> = {}
   for (const c of CASINO_LINKS) {
-    if (lower.includes(c.name.toLowerCase()) || c.tags.some(t => lower.includes(t))) tags.push(...c.tags)
+    if (lower.includes(c.name.toLowerCase()) || lower.includes(c.tag)) tagSet[c.tag] = true
   }
   for (const s of SLOT_LINKS) {
-    if (lower.includes(s.name.toLowerCase()) || s.tags.some(t => lower.includes(t))) tags.push(...s.tags)
+    if (lower.includes(s.name.toLowerCase()) || lower.includes(s.tag)) tagSet[s.tag] = true
   }
-  return [...new Set(tags)]
+  return Object.keys(tagSet)
 }
 
 async function getRandomAuthor(supabase: ReturnType<typeof createClient>) {
@@ -119,13 +119,13 @@ export async function GET(req: NextRequest) {
   const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000)
   const keyword = DAILY_TOPICS[dayOfYear % DAILY_TOPICS.length]
 
-  const internalLinks = 'CASINOS: ' + CASINO_LINKS.map(c => '[' + c.name + '](https://onlinemobileslots.com' + c.url + ')').join(', ')
-    + '\nSLOTS: ' + SLOT_LINKS.map(s => '[' + s.name + '](https://onlinemobileslots.com' + s.url + ')').join(', ')
+  const casinoLinkStr = CASINO_LINKS.map(c => '[' + c.name + '](https://onlinemobileslots.com' + c.url + ')').join(', ')
+  const slotLinkStr = SLOT_LINKS.map(s => '[' + s.name + '](https://onlinemobileslots.com' + s.url + ')').join(', ')
 
   const author = await getRandomAuthor(supabase)
 
-  const systemPrompt = 'You are an SEO writer for onlinemobileslots.com, a South African casino affiliate. Write direct, human content for ZAR players. No puffery, no em dashes.\n\nInternal links to include naturally (3-5):\n' + internalLinks
-    + '\n\nRespond ONLY with valid JSON: { "title": "under 70 chars", "summary": "under 160 chars", "categories": ["array"], "imagePrompt": "vivid 16:9 banner, digital illustration, casino theme, no text", "content": "markdown article, ## H2, ### H3, **bold**, 3-5 internal links, 600+ words" }'
+  const systemPrompt = 'You are an SEO writer for onlinemobileslots.com, a South African casino affiliate. Write direct, human content for ZAR players. No puffery, no em dashes.\n\nInternal links to use naturally (3-5 per article):\nCASINOS: ' + casinoLinkStr + '\nSLOTS: ' + slotLinkStr
+    + '\n\nRespond ONLY with valid JSON (no backticks): { "title": "under 70 chars", "summary": "under 160 chars", "categories": ["array from: Industry News, Game Reviews, Bonuses & Promotions, Mobile & App Gaming, Responsible Gambling, New Game Releases"], "imagePrompt": "vivid 16:9 banner, digital illustration, casino theme, no text in image", "content": "markdown article ## H2 ### H3 **bold** 3-5 internal links 600+ words" }'
     + (author ? '\nByline: ' + author.name : '')
 
   const searchContext = await searchWeb(keyword)
@@ -135,7 +135,7 @@ export async function GET(req: NextRequest) {
       model: 'claude-sonnet-4-6',
       max_tokens: 3000,
       system: systemPrompt,
-      messages: [{ role: 'user', content: 'Write a news article about: "' + keyword + '"\n\nWeb research:\n' + searchContext + '\n\nRespond ONLY with JSON.' }],
+      messages: [{ role: 'user', content: 'Write a news article about: "' + keyword + '"\n\nResearch:\n' + searchContext + '\n\nJSON only.' }],
     })
 
     const raw = message.content[0].type === 'text' ? message.content[0].text : ''
@@ -161,7 +161,7 @@ export async function GET(req: NextRequest) {
     const { error } = await supabase.from('news').insert(insertData)
     if (error) throw new Error(error.message)
 
-    return NextResponse.json({ success: true, keyword, title: parsed.title, slug, imageGenerated: !!imageUrl, author: author?.name })
+    return NextResponse.json({ success: true, keyword, title: parsed.title, slug, author: author ? author.name : null })
   } catch (e) {
     console.error('Cron error:', e)
     return NextResponse.json({ error: String(e) }, { status: 500 })
