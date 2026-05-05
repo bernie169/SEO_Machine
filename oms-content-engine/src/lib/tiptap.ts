@@ -1,5 +1,5 @@
-// Converts plain markdown-ish text from Claude into TipTap ProseMirror JSON
-// Matches the format already used in the hotslotz news table
+// Converts markdown from Claude into TipTap ProseMirror JSON
+// Handles: ## headings, ### headings, **bold**, [link](url), bullet lists
 
 export function textToTiptap(text: string): object {
   const lines = text.split('\n')
@@ -13,7 +13,7 @@ export function textToTiptap(text: string): object {
       content.push({
         type: 'heading',
         attrs: { level: 2, textAlign: 'left' },
-        content: [{ type: 'text', text: line.replace('## ', '') }]
+        content: parseInline(line.replace('## ', ''))
       })
       continue
     }
@@ -23,12 +23,12 @@ export function textToTiptap(text: string): object {
       content.push({
         type: 'heading',
         attrs: { level: 3, textAlign: 'left' },
-        content: [{ type: 'text', text: line.replace('### ', '') }]
+        content: parseInline(line.replace('### ', ''))
       })
       continue
     }
 
-    // Bullet list items - collect consecutive ones
+    // Bullet list items
     if (line.startsWith('- ') || line.startsWith('* ')) {
       const items: object[] = []
       while (i < lines.length && (lines[i].startsWith('- ') || lines[i].startsWith('* '))) {
@@ -37,12 +37,12 @@ export function textToTiptap(text: string): object {
           content: [{
             type: 'paragraph',
             attrs: { textAlign: 'left' },
-            content: [{ type: 'text', text: lines[i].replace(/^[-*] /, '') }]
+            content: parseInline(lines[i].replace(/^[-*] /, ''))
           }]
         })
         i++
       }
-      i-- // back up one since outer loop will increment
+      i--
       content.push({ type: 'bulletList', content: items })
       continue
     }
@@ -50,39 +50,51 @@ export function textToTiptap(text: string): object {
     // Empty line - skip
     if (line.trim() === '') continue
 
-    // Regular paragraph - handle **bold** inline
-    const paraContent = parseInline(line)
+    // Regular paragraph
     content.push({
       type: 'paragraph',
       attrs: { textAlign: 'left' },
-      content: paraContent
+      content: parseInline(line)
     })
   }
 
   return { type: 'doc', content }
 }
 
+// Parses inline markdown: **bold** and [link text](url)
 function parseInline(text: string): object[] {
   const nodes: object[] = []
-  const boldRegex = /\*\*(.*?)\*\*/g
+  // Combined regex: matches **bold** or [text](url)
+  const inlineRegex = /\*\*(.*?)\*\*|\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g
   let lastIndex = 0
   let match
 
-  while ((match = boldRegex.exec(text)) !== null) {
-    // Text before bold
+  while ((match = inlineRegex.exec(text)) !== null) {
+    // Plain text before this match
     if (match.index > lastIndex) {
       nodes.push({ type: 'text', text: text.slice(lastIndex, match.index) })
     }
-    // Bold text
-    nodes.push({
-      type: 'text',
-      text: match[1],
-      marks: [{ type: 'bold' }]
-    })
+
+    if (match[1] !== undefined) {
+      // **bold**
+      nodes.push({
+        type: 'text',
+        text: match[1],
+        marks: [{ type: 'bold' }]
+      })
+    } else if (match[2] !== undefined && match[3] !== undefined) {
+      // [link text](url)
+      nodes.push({
+        type: 'text',
+        text: match[2],
+        marks: [{ type: 'link', attrs: { href: match[3], target: '_blank', rel: 'noopener noreferrer' } }]
+      })
+    }
+
     lastIndex = match.index + match[0].length
   }
 
-  // Remaining text
+  // Remaining plain text
   if (lastIndex < text.length) {
     nodes.push({ type: 'text', text: text.slice(lastIndex) })
   }
