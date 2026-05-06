@@ -30,6 +30,7 @@ type GeneratedArticle = {
   categories: string[]
   content: object
   contentMarkdown: string
+  image: string
 }
 
 type Step = 'input' | 'generating' | 'review' | 'publishing' | 'done'
@@ -38,11 +39,9 @@ export default function Home() {
   const [password, setPassword] = useState('')
   const [authed, setAuthed] = useState(false)
   const [authError, setAuthError] = useState(false)
-
   const [keyword, setKeyword] = useState('')
   const [contentType, setContentType] = useState('News Article')
   const [additionalContext, setAdditionalContext] = useState('')
-
   const [step, setStep] = useState<Step>('input')
   const [article, setArticle] = useState<GeneratedArticle | null>(null)
   const [editedTitle, setEditedTitle] = useState('')
@@ -53,7 +52,6 @@ export default function Home() {
   const [imageFile, setImageFile] = useState('')
   const [error, setError] = useState('')
   const [publishedUrl, setPublishedUrl] = useState('')
-
   const logRef = useRef<HTMLDivElement>(null)
   const [log, setLog] = useState<string[]>([])
 
@@ -63,7 +61,6 @@ export default function Home() {
 
   const handleAuth = (e: React.FormEvent) => {
     e.preventDefault()
-    // Client-side password check is just for UX — real auth happens server-side
     if (password.length > 3) {
       setAuthed(true)
       setAuthError(false)
@@ -75,14 +72,12 @@ export default function Home() {
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!keyword.trim()) return
-
     setStep('generating')
     setError('')
     setLog([])
     addLog(`Starting generation for: "${keyword}"`)
     addLog(`Content type: ${contentType}`)
     addLog('Searching the web with Tavily...')
-
     try {
       const res = await fetch('/api/generate', {
         method: 'POST',
@@ -92,24 +87,26 @@ export default function Home() {
         },
         body: JSON.stringify({ keyword, contentType, additionalContext }),
       })
-
       addLog('Web search complete. Sending to Claude...')
       const data = await res.json()
-
       if (!res.ok) throw new Error(data.error || 'Generation failed')
-
       addLog('Claude generation complete.')
       addLog(`Title: ${data.title}`)
       addLog(`Categories: ${data.categories?.join(', ')}`)
       addLog(`Slug: ${data.slug}`)
+      if (data.image) {
+        addLog('Image generated via Replicate ✓')
+      } else {
+        addLog('No image generated (check REPLICATE_API_TOKEN env var)')
+      }
       addLog('Ready for review.')
-
       setArticle(data)
       setEditedTitle(data.title)
       setEditedSummary(data.summary)
       setEditedSlug(data.slug)
       setEditedCategories(data.categories || [])
       setEditedMarkdown(data.contentMarkdown)
+      setImageFile(data.image || '')  // ← wire image URL from generate response
       setStep('review')
     } catch (err) {
       setError(String(err))
@@ -122,13 +119,9 @@ export default function Home() {
     if (!article) return
     setStep('publishing')
     addLog('Publishing to Supabase...')
-
-    // Re-convert edited markdown to TipTap JSON via API
     try {
-      // Import tiptap converter inline
       const { textToTiptap } = await import('@/lib/tiptap')
       const freshContent = textToTiptap(editedMarkdown)
-
       const res = await fetch('/api/publish', {
         method: 'POST',
         headers: {
@@ -144,10 +137,8 @@ export default function Home() {
           image: imageFile,
         }),
       })
-
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Publish failed')
-
       addLog('Published successfully!')
       addLog(`Live at: https://onlinemobileslots.com/news/${data.slug}`)
       setPublishedUrl(`https://onlinemobileslots.com/news/${data.slug}`)
@@ -201,7 +192,6 @@ export default function Home() {
 
   return (
     <div className={styles.wrap}>
-      {/* Header */}
       <header className={styles.header}>
         <div className={styles.headerLeft}>
           <span className={styles.logo}>OMS<span>///</span>ENGINE</span>
@@ -220,10 +210,7 @@ export default function Home() {
       </header>
 
       <main className={styles.main}>
-        {/* Left panel */}
         <div className={styles.leftPanel}>
-
-          {/* Input form */}
           {(step === 'input' || step === 'generating') && (
             <section className={styles.card}>
               <h2 className={styles.cardTitle}>// GENERATE ARTICLE</h2>
@@ -238,7 +225,6 @@ export default function Home() {
                   disabled={step === 'generating'}
                   required
                 />
-
                 <label className={styles.label}>CONTENT TYPE</label>
                 <select
                   className={styles.select}
@@ -248,7 +234,6 @@ export default function Home() {
                 >
                   {CONTENT_TYPES.map(t => <option key={t}>{t}</option>)}
                 </select>
-
                 <label className={styles.label}>ADDITIONAL CONTEXT <span className={styles.optional}>(optional)</span></label>
                 <textarea
                   className={styles.textarea}
@@ -258,9 +243,7 @@ export default function Home() {
                   rows={3}
                   disabled={step === 'generating'}
                 />
-
                 {error && <p className={styles.errorMsg}>{error}</p>}
-
                 <button
                   type="submit"
                   className={styles.btnPrimary}
@@ -272,41 +255,34 @@ export default function Home() {
             </section>
           )}
 
-          {/* Review form */}
           {(step === 'review' || step === 'publishing') && article && (
             <section className={styles.card}>
               <h2 className={styles.cardTitle}>// REVIEW & EDIT</h2>
-
               <label className={styles.label}>TITLE</label>
-              <input
-                className={styles.input}
-                value={editedTitle}
-                onChange={e => setEditedTitle(e.target.value)}
-              />
-
+              <input className={styles.input} value={editedTitle} onChange={e => setEditedTitle(e.target.value)} />
               <label className={styles.label}>SLUG</label>
-              <input
-                className={styles.input}
-                value={editedSlug}
-                onChange={e => setEditedSlug(e.target.value)}
-              />
+              <input className={styles.input} value={editedSlug} onChange={e => setEditedSlug(e.target.value)} />
               <p className={styles.hint}>↳ onlinemobileslots.com/news/{editedSlug}</p>
-
               <label className={styles.label}>SUMMARY</label>
-              <textarea
-                className={styles.textarea}
-                value={editedSummary}
-                onChange={e => setEditedSummary(e.target.value)}
-                rows={2}
-              />
+              <textarea className={styles.textarea} value={editedSummary} onChange={e => setEditedSummary(e.target.value)} rows={2} />
 
-              <label className={styles.label}>IMAGE FILENAME <span className={styles.optional}>(optional)</span></label>
+              <label className={styles.label}>IMAGE URL</label>
+              {imageFile && imageFile.startsWith('http') && (
+                <img
+                  src={imageFile}
+                  alt="Generated article image"
+                  style={{ width: '100%', borderRadius: '6px', marginBottom: '8px', maxHeight: '200px', objectFit: 'cover' }}
+                />
+              )}
               <input
                 className={styles.input}
                 value={imageFile}
                 onChange={e => setImageFile(e.target.value)}
-                placeholder="e.g. aviator-tips-2025.jpg"
+                placeholder="Auto-generated or paste a URL"
               />
+              {!imageFile && (
+                <p className={styles.hint}>⚠ No image generated. Add REPLICATE_API_TOKEN to Vercel env vars to enable auto-generation.</p>
+              )}
 
               <label className={styles.label}>CATEGORIES</label>
               <div className={styles.catGrid}>
@@ -322,7 +298,6 @@ export default function Home() {
                   </button>
                 ))}
               </div>
-
               <label className={styles.label}>CONTENT (MARKDOWN)</label>
               <textarea
                 className={styles.contentEditor}
@@ -331,13 +306,9 @@ export default function Home() {
                 rows={25}
                 spellCheck
               />
-
               {error && <p className={styles.errorMsg}>{error}</p>}
-
               <div className={styles.btnRow}>
-                <button className={styles.btnSecondary} onClick={handleReset}>
-                  ← START OVER
-                </button>
+                <button className={styles.btnSecondary} onClick={handleReset}>← START OVER</button>
                 <button
                   className={styles.btnPrimary}
                   onClick={handlePublish}
@@ -349,31 +320,21 @@ export default function Home() {
             </section>
           )}
 
-          {/* Done state */}
           {step === 'done' && (
             <section className={styles.card}>
               <div className={styles.doneBox}>
                 <div className={styles.doneIcon}>✓</div>
                 <h2 className={styles.doneTitle}>PUBLISHED</h2>
-                <a
-                  href={publishedUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={styles.doneLink}
-                >
+                <a href={publishedUrl} target="_blank" rel="noopener noreferrer" className={styles.doneLink}>
                   {publishedUrl}
                 </a>
-                <button className={styles.btnPrimary} onClick={handleReset}>
-                  GENERATE ANOTHER →
-                </button>
+                <button className={styles.btnPrimary} onClick={handleReset}>GENERATE ANOTHER →</button>
               </div>
             </section>
           )}
         </div>
 
-        {/* Right panel - log + preview */}
         <div className={styles.rightPanel}>
-          {/* Activity log */}
           <section className={styles.logCard}>
             <h2 className={styles.cardTitle}>// ACTIVITY LOG</h2>
             <div className={styles.log} ref={logRef}>
@@ -386,11 +347,17 @@ export default function Home() {
             </div>
           </section>
 
-          {/* Preview */}
           {article && step !== 'input' && (
             <section className={styles.previewCard}>
               <h2 className={styles.cardTitle}>// PREVIEW</h2>
               <div className={styles.preview}>
+                {imageFile && imageFile.startsWith('http') && (
+                  <img
+                    src={imageFile}
+                    alt={editedTitle}
+                    style={{ width: '100%', borderRadius: '6px', marginBottom: '12px', maxHeight: '180px', objectFit: 'cover' }}
+                  />
+                )}
                 <h1 className={styles.previewTitle}>{editedTitle}</h1>
                 <p className={styles.previewMeta}>
                   {editedCategories.join(' · ')} &nbsp;|&nbsp; {editedSlug}
