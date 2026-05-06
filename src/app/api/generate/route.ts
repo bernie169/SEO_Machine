@@ -18,7 +18,6 @@ const CATEGORIES = [
 async function searchWeb(query: string): Promise<string> {
   const apiKey = process.env.TAVILY_API_KEY
   if (!apiKey) return 'No search results available - Tavily API key not configured.'
-
   try {
     const res = await fetch('https://api.tavily.com/search', {
       method: 'POST',
@@ -44,6 +43,62 @@ async function searchWeb(query: string): Promise<string> {
   }
 }
 
+async function generateImage(title: string, categories: string[]): Promise<string> {
+  const replicateToken = process.env.REPLICATE_API_TOKEN
+  if (!replicateToken) {
+    console.warn('No REPLICATE_API_TOKEN — skipping image generation')
+    return ''
+  }
+
+  // Build a prompt from the article title and categories
+  const catStr = categories.slice(0, 2).join(', ')
+  const prompt = `Professional banner image for a South African online casino news article: "${title}". Context: ${catStr}. Modern, clean, vibrant. No text.`
+
+  try {
+    // Start the prediction
+    const startRes = await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${replicateToken}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'wait',
+      },
+      body: JSON.stringify({ input: { prompt, aspect_ratio: '16:9', output_format: 'webp' } }),
+    })
+
+    if (!startRes.ok) {
+      const err = await startRes.text()
+      console.error('Replicate start error:', err)
+      return ''
+    }
+
+    const prediction = await startRes.json()
+
+    // If 'Prefer: wait' worked, output is already there
+    if (prediction.output && Array.isArray(prediction.output) && prediction.output[0]) {
+      return prediction.output[0]
+    }
+
+    // Otherwise poll for up to 30 seconds
+    const predId = prediction.id
+    for (let i = 0; i < 15; i++) {
+      await new Promise(r => setTimeout(r, 2000))
+      const pollRes = await fetch(`https://api.replicate.com/v1/predictions/${predId}`, {
+        headers: { 'Authorization': `Bearer ${replicateToken}` },
+      })
+      const poll = await pollRes.json()
+      if (poll.status === 'succeeded' && poll.output?.[0]) return poll.output[0]
+      if (poll.status === 'failed') { console.error('Replicate failed:', poll.error); return '' }
+    }
+
+    console.warn('Replicate timed out after 30s')
+    return ''
+  } catch (e) {
+    console.error('Image generation error:', e)
+    return ''
+  }
+}
+
 export async function POST(req: NextRequest) {
   // Auth check
   const auth = req.headers.get('x-admin-password')
@@ -57,31 +112,10 @@ export async function POST(req: NextRequest) {
   // 1. Search the web
   const searchContext = await searchWeb(keyword)
 
-  // 2. Generate with Claude
-  const systemPrompt = `You are an SEO content writer for onlinemobileslots.com, a South African online casino and slots affiliate site. You write for ZAR players, referencing South African gambling context (WCGRB, NRGP, rand amounts). Your writing is direct, informative, and human - no AI puffery, no em dashes, no "rule of three" lists, no filler phrases like "in conclusion" or "it's worth noting".
+  // 2. Generate article with Claude
+  const systemPrompt = `You are an SEO content writer for onlinemobileslots.com, a South African online casino and slots affiliate site. You write for ZAR players, referencing South African gambling context (WCGRB, NRGP, rand amounts). Your writing is direct, informative, and human - no AI puffery, no em dashes, no "rule of three" lists, no filler phrases like "in conclusion" or "it's worth noting". Available categories: ${CATEGORIES.join(', ')} You MUST respond with ONLY a valid JSON object - no markdown, no backticks, no preamble. The JSON must have exactly these fields: { "title": "string - compelling SEO headline under 70 chars", "summary": "string - 1-2 sentence teaser for the article listing page, under 160 chars", "categories": ["array", "of", "category", "strings", "from", "the", "available", "list"], "content": "string - full article body in markdown with ## H2 and ### H3 headings, **bold** for emphasis, - for bullet lists. Minimum 600 words." } Rules: - Never invent bonus amounts, wagering requirements, or specific figures unless confirmed in search results - Always mention NRGP (National Responsible Gambling Programme) where relevant - Write for South African players - use Rand, reference SA operators where relevant - Content type: ${contentType || 'news article'}`
 
-Available categories: ${CATEGORIES.join(', ')}
-
-You MUST respond with ONLY a valid JSON object - no markdown, no backticks, no preamble. The JSON must have exactly these fields:
-{
-  "title": "string - compelling SEO headline under 70 chars",
-  "summary": "string - 1-2 sentence teaser for the article listing page, under 160 chars",
-  "categories": ["array", "of", "category", "strings", "from", "the", "available", "list"],
-  "content": "string - full article body in markdown with ## H2 and ### H3 headings, **bold** for emphasis, - for bullet lists. Minimum 600 words."
-}
-
-Rules:
-- Never invent bonus amounts, wagering requirements, or specific figures unless confirmed in search results
-- Always mention NRGP (National Responsible Gambling Programme) where relevant  
-- Write for South African players - use Rand, reference SA operators where relevant
-- Content type: ${contentType || 'news article'}`
-
-  const userPrompt = `Write a ${contentType || 'news article'} about: "${keyword}"
-
-${additionalContext ? `Additional context: ${additionalContext}\n\n` : ''}Web research results:
-${searchContext}
-
-Generate the article now. Respond ONLY with the JSON object.`
+  const userPrompt = `Write a ${contentType || 'news article'} about: "${keyword}" ${additionalContext ? `Additional context: ${additionalContext}\n\n` : ''}Web research results: ${searchContext} Generate the article now. Respond ONLY with the JSON object.`
 
   try {
     const message = await anthropic.messages.create({
@@ -92,13 +126,15 @@ Generate the article now. Respond ONLY with the JSON object.`
     })
 
     const rawText = message.content[0].type === 'text' ? message.content[0].text : ''
-
-    // Parse JSON response
     const cleaned = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
     const parsed = JSON.parse(cleaned)
 
-    // Convert markdown content to TipTap JSON
-    const tiptapContent = textToTiptap(parsed.content)
+    // 3. Generate image in parallel with tiptap conversion (non-blocking for UX)
+    const [tiptapContent, imageUrl] = await Promise.all([
+      Promise.resolve(textToTiptap(parsed.content)),
+      generateImage(parsed.title, parsed.categories || []),
+    ])
+
     const slug = slugify(parsed.title)
 
     return NextResponse.json({
@@ -107,7 +143,8 @@ Generate the article now. Respond ONLY with the JSON object.`
       categories: parsed.categories,
       slug,
       content: tiptapContent,
-      contentMarkdown: parsed.content, // for preview
+      contentMarkdown: parsed.content,
+      image: imageUrl, // full Replicate URL or empty string
     })
   } catch (e) {
     console.error('Generation error:', e)
